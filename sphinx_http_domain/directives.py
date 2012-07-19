@@ -20,7 +20,8 @@ from sphinx_http_domain.docfields import NoArgGroupedField, ResponseField
 from sphinx_http_domain.nodes import (desc_http_method, desc_http_url,
                                       desc_http_path, desc_http_patharg,
                                       desc_http_query, desc_http_queryparam,
-                                      desc_http_fragment, desc_http_response)
+                                      desc_http_fragment, desc_http_response,
+                                      desc_http_example)
 from sphinx_http_domain.utils import slugify, slugify_url
 
 try:
@@ -280,6 +281,11 @@ class HTTPResponse(HTTPDescription):
                    typenames=('datatype', 'type'),
                    typerolename='response',
                    can_collapse=True),
+        TypedField('example', label=l_('HTTP Example'),
+                   names=('example',),
+                   typenames=('exampletype'),
+                   typerolename='response',
+                   can_collapse=True),
         NoArgGroupedField('contenttype', label=l_('Content Types'),
                           names=('contenttype', 'mimetype', 'format'),
                           can_collapse=True),
@@ -309,3 +315,49 @@ class HTTPResponse(HTTPDescription):
         self.indexnode['entries'].append(('single',
                                           _("HTTP response; %s") % sig,
                                           anchor, anchor))
+
+
+class HTTPExample(HTTPDescription):
+    """
+    Example of an HTTP interaction.
+    """
+    typ = 'example'
+    nodetype = strong
+
+    option_spec = {
+        'noindex': directives.flag
+    }
+    doc_field_types = [
+        TypedField('curl',
+            label=l_('Curl Request'),
+            names=('curl',),
+            typenames=('curltype'),
+            typerolename='response',
+            can_collapse=True
+        )
+    ]
+
+    def handle_signature(self, sig, signode):
+      """
+      Transform an HTTP example into RST nodes.
+      Returns the reference name.
+      """
+      name = slugify(sig)
+      signode += desc_http_example(name, sig)
+      return name
+
+    def get_entry(self, name, sig):
+      return (self.env.docname, sig, sig)
+
+    def add_index(self, anchor, name, sig):
+      """
+      Add index entries to self.indexnode, if applicable.
+
+      *name* is whatever :meth:`handle_signature()` returned.
+      """
+      self.indexnode['entries'].append(('single',
+                                        _("%s (HTTP example)") % sig,
+                                        anchor, anchor))
+      self.indexnode['entries'].append(('single',
+                                        _("HTTP example; %s") % sig,
+                                        anchor, anchor))

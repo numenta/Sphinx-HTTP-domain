@@ -306,10 +306,11 @@ class desc_http_response(HttpNode):
     def visit_html(self, node):
         self.body.append(self.starttag(node, 'strong', '',
                                        CLASS='deschttpresponse'))
+        self.body.append('RETURNS: ')
 
     @staticmethod
     def depart_html(self, node):
-        self.body.append('</strong>')
+      self.body.append('</strong>')
 
     @staticmethod
     def visit_latex(self, node):
@@ -326,3 +327,33 @@ class desc_http_response(HttpNode):
     @staticmethod
     def depart_man(self, node):
         self.body.append(self.defs['strong'][1])
+
+
+class desc_http_example(HttpNode):
+  """HTTP response node."""
+
+  @staticmethod
+  def visit_html(self, node):
+    self.body.append(self.starttag(node, 'strong', '',
+      CLASS='deschttpexample'))
+    self.body.append('Example: ')
+
+  @staticmethod
+  def depart_html(self, node):
+    self.body.append('</strong>')
+
+  @staticmethod
+  def visit_latex(self, node):
+    self.body.append(r'\textbf{')
+
+  @staticmethod
+  def depart_latex(self, node):
+    self.body.append('}')
+
+  @staticmethod
+  def visit_man(self, node):
+    self.body.append(self.defs['strong'][0])
+
+  @staticmethod
+  def depart_man(self, node):
+    self.body.append(self.defs['strong'][1])

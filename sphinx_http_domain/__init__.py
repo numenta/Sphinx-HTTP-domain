@@ -18,11 +18,12 @@ from sphinx.domains import Domain, ObjType
 from sphinx.roles import XRefRole
 from sphinx.util.nodes import make_refnode
 
-from sphinx_http_domain.directives import HTTPMethod, HTTPResponse
+from sphinx_http_domain.directives import HTTPMethod, HTTPResponse, HTTPExample
 from sphinx_http_domain.nodes import (desc_http_method, desc_http_url,
                                       desc_http_path, desc_http_patharg,
                                       desc_http_query, desc_http_queryparam,
-                                      desc_http_fragment, desc_http_response)
+                                      desc_http_fragment, desc_http_response,
+                                      desc_http_example)
 
 
 class HTTPDomain(Domain):
@@ -32,18 +33,22 @@ class HTTPDomain(Domain):
     object_types = {
         'method': ObjType(l_('method'), 'method'),
         'response': ObjType(l_('response'), 'response'),
+        'example': ObjType(l_('example'), 'example'),
     }
     directives = {
         'method': HTTPMethod,
         'response': HTTPResponse,
+        'example': HTTPExample
     }
     roles = {
         'method': XRefRole(),
         'response': XRefRole(),
+        'example': XRefRole()
     }
     initial_data = {
         'method': {},    # name -> docname, sig, title, method
         'response': {},  # name -> docname, sig, title
+        'example': {},  # name -> docname, sig, title
     }
 
     def clear_doc(self, docname):
@@ -124,3 +129,4 @@ def setup(app):
     desc_http_queryparam.contribute_to_app(app)
     desc_http_fragment.contribute_to_app(app)
     desc_http_response.contribute_to_app(app)
+    desc_http_example.contribute_to_app(app)
