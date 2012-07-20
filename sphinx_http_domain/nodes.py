@@ -306,7 +306,7 @@ class desc_http_response(HttpNode):
     def visit_html(self, node):
         self.body.append(self.starttag(node, 'strong', '',
                                        CLASS='deschttpresponse'))
-        self.body.append('RETURNS: ')
+        self.body.append('RETURNS')
 
     @staticmethod
     def depart_html(self, node):
