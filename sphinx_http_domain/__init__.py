@@ -29,9 +29,15 @@ from sphinx_http_domain.nodes import (desc_http_method, desc_http_url,
                                       desc_http_fragment, desc_http_response,
                                       desc_http_example)
 
+import pprint
+
+pp = pprint.PrettyPrinter(indent=4)
+
 API_KEY = 'hJbcM9vWW4Te89L0eKhFdQMOTxlN9Tfb'
 apiUserId = '0a0acdd4-d293-11e1-bb05-123138107980'
 projectId = '355b6b5c-7a66-4857-ae1f-85e196e7ebbb'
+
+dummyProject = None
 
 class HTTPDomain(Domain):
     """HTTP language domain."""
@@ -151,6 +157,10 @@ def extract_curl_request(doclines):
         if 'Curl response' in line:
             endIndex = i
             break
+
+    if startIndex is None:
+        return None
+
     curl = ' '.join(doclines[startIndex+1:endIndex])
     # remove line break chars and split into components
     curl = curl.replace('\\', '').split()
@@ -176,13 +186,18 @@ def extract_curl_request(doclines):
 
 
 def make_command_substitutions(cmd):
+    global projectId
+    projectToUse = projectId
+    print ' '.join(cmd)
+    if 'DELETE' in ' '.join(cmd):
+        projectToUse = dummyProject
     for i, item in enumerate(cmd):
         # replace API_KEY
         newItem = item.replace('{API_KEY}', API_KEY)
         # replace userId
         newItem = newItem.replace('{USER_ID}', apiUserId)
         # replace projectId
-        newItem = newItem.replace('{PROJECT_ID}', projectId)
+        newItem = newItem.replace('{PROJECT_ID}', projectToUse)
         # replace modelId
 
         # put new item in place of the old one
@@ -201,13 +216,20 @@ def escape_double_quotes_in_curl_data(curlRequest):
 def execute_curl_request(request):
     make_command_substitutions(request)
     escape_double_quotes_in_curl_data(request)
-    response = subprocess.Popen(request, stdout=subprocess.PIPE).communicate()[0]
-    return response
+    # add the -i option to print the response headers as well
+    request.append('-i')
+    print "CURL: " + ' '.join(request)
+    raw = subprocess.Popen(request, stdout=subprocess.PIPE).communicate()[0]
+    raw = raw.split('\r\n\r\n')
+    return {
+      'headers': raw[0],
+      'body': raw[1]
+    }
 
 
 
-def process_api_response(doclines, response):
-    jsonObj = json.loads(response)
+def process_api_response(doclines, headers, respBody):
+    jsonObj = json.loads(respBody)
 
     if 'errors' in jsonObj:
       raise Exception(jsonObj['errors'])
@@ -218,8 +240,14 @@ def process_api_response(doclines, response):
     doclines.append('')
     doclines.append('  Curl response:')
     doclines.append('')
+    doclines.append('  .. code-block:: http')
+    doclines.append('')
+    for hdr in headers.split('\n'):
+      doclines.append('    ' + hdr)
+    doclines.append('')
     doclines.append('  .. code-block:: json')
     doclines.append('')
+
     # add 4 spaces to each response line to properly indent it within code-block
     for i, line in enumerate(newResponse):
       newResponse[i] = '    ' + line
@@ -229,19 +257,22 @@ def process_api_response(doclines, response):
 
 
 def replace_curl_examples(app, what, name, obj, options, lines):
+    if not app.config.auto_curl:
+        return
     if what == 'rest':
         curl_request = extract_curl_request(lines)
-        print "CURL REQUEST: " + ' '.join(curl_request)
-        response = execute_curl_request(curl_request)
-        try:
-          process_api_response(lines, response)
-        except Exception as e:
-          raise Exception("Error executing curl during API doc build.\n\t" +
-                          "Curl call details are: " + ' '.join(curl_request) + '\n\t' +
-                          "Errors from API: " + str(e.message))
+        if curl_request is not None:
+            response = execute_curl_request(curl_request)
+            try:
+              process_api_response(lines, response['headers'], response['body'])
+            except Exception as e:
+              raise Exception("Error executing curl during API doc build.\n\t" +
+                              "Curl call details are: " + ' '.join(curl_request) + '\n\t' +
+                              "Errors from API: " + str(e.message))
 
 
 def setup(app):
+    global dummyProject
     app.add_autodocumenter(RestDocumenter)
     app.add_domain(HTTPDomain)
     desc_http_method.contribute_to_app(app)
@@ -253,5 +284,14 @@ def setup(app):
     desc_http_fragment.contribute_to_app(app)
     desc_http_response.contribute_to_app(app)
     desc_http_example.contribute_to_app(app)
-#    app.connect('doctree-resolved', replace_curl_examples)
+    app.add_config_value('auto_curl', False, False)
     app.connect('autodoc-process-docstring', replace_curl_examples)
+
+    # Lastly, make some dummy API objects we can delete
+    cmd = 'curl https://api.numenta.com/v2/users/' + apiUserId + '/projects -u ' \
+      + API_KEY + ': -X POST -d {"project":{"name":"DUMMY"}}'
+    raw = subprocess.Popen(cmd.split(), stdout=subprocess.PIPE).communicate()[0]
+    resp = json.loads(raw)
+    pp.pprint(resp)
+    dummyProject= resp['project']['id']
+
