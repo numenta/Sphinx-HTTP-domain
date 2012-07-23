@@ -31,13 +31,22 @@ from sphinx_http_domain.nodes import (desc_http_method, desc_http_url,
 
 import pprint
 
+STREAM_ID_TOKEN = '{STREAM_ID}'
+
+PROJECT_ID_TOKEN = '{PROJECT_ID}'
+
+USER_ID_TOKEN = '{USER_ID}'
+
+API_KEY_TOKEN = '{API_KEY}'
+
 pp = pprint.PrettyPrinter(indent=4)
 
 API_KEY = 'hJbcM9vWW4Te89L0eKhFdQMOTxlN9Tfb'
 apiUserId = '0a0acdd4-d293-11e1-bb05-123138107980'
-projectId = '355b6b5c-7a66-4857-ae1f-85e196e7ebbb'
-
 dummyProject = None
+
+dummyDoomedProject = None
+dummyDoomedStream= None
 
 class HTTPDomain(Domain):
     """HTTP language domain."""
@@ -148,6 +157,29 @@ class RestDocumenter(autodoc.MethodDocumenter):
 
 
 
+def convert_curl_string_to_curl_command(curlString):
+    # remove line break chars and split into components
+    curl = curlString.replace('\\', '').split()
+    # the problem is that this will split apart legit words in the -d value,
+    # so we look for that block and squish them back together
+    startIndex = None
+    for i, subCmd in enumerate(curl):
+      if subCmd == '-d':
+        startIndex = i
+        break
+
+    endIndex = len(curl) - 1
+
+    subStrings = []
+    if startIndex:
+      for i in reversed(range(startIndex+1, endIndex+1)):
+        subStrings.append(curl.pop(i))
+      subStrings.reverse()
+      curl.insert(startIndex + 1, ' '.join(subStrings))
+
+    return curl
+
+
 def extract_curl_request(doclines):
     startIndex = None
     endIndex = None
@@ -161,44 +193,49 @@ def extract_curl_request(doclines):
     if startIndex is None:
         return None
 
-    curl = ' '.join(doclines[startIndex+1:endIndex])
-    # remove line break chars and split into components
-    curl = curl.replace('\\', '').split()
-    # the problem is that this will split apart legit words in the -d value,
-    # so we look for that block and squish them back together
-    startIndex = None
-    for i, subcmd in enumerate(curl):
-        if subcmd == '-d':
-            startIndex = i
-            break
+    curl  = convert_curl_string_to_curl_command(' '.join(doclines[startIndex+1:endIndex]))
 
-    endIndex = len(curl) - 1
-
-    substrings = []
-    if startIndex:
-        for i in reversed(range(startIndex+1, endIndex+1)):
-            substrings.append(curl.pop(i))
-        substrings.reverse()
-        curl.insert(startIndex + 1, ' '.join(substrings))
+#    curl = ' '.join(doclines[startIndex+1:endIndex])
+#    # remove line break chars and split into components
+#    curl = curl.replace('\\', '').split()
+#    # the problem is that this will split apart legit words in the -d value,
+#    # so we look for that block and squish them back together
+#    startIndex = None
+#    for i, subcmd in enumerate(curl):
+#        if subcmd == '-d':
+#            startIndex = i
+#            break
+#
+#    endIndex = len(curl) - 1
+#
+#    substrings = []
+#    if startIndex:
+#        for i in reversed(range(startIndex+1, endIndex+1)):
+#            substrings.append(curl.pop(i))
+#        substrings.reverse()
+#        curl.insert(startIndex + 1, ' '.join(substrings))
 
     return curl
 
 
 
 def make_command_substitutions(cmd):
-    global projectId
-    projectToUse = projectId
-    print ' '.join(cmd)
+    global dummyProject, dummyDoomedStream
+    projectToUse = dummyProject
     if 'DELETE' in ' '.join(cmd):
-        projectToUse = dummyProject
+        projectToUse = dummyDoomedProject
+
     for i, item in enumerate(cmd):
         # replace API_KEY
-        newItem = item.replace('{API_KEY}', API_KEY)
+        newItem = item.replace(API_KEY_TOKEN, API_KEY)
         # replace userId
-        newItem = newItem.replace('{USER_ID}', apiUserId)
+        newItem = newItem.replace(USER_ID_TOKEN, apiUserId)
         # replace projectId
-        newItem = newItem.replace('{PROJECT_ID}', projectToUse)
-        # replace modelId
+        if PROJECT_ID_TOKEN in newItem:
+          newItem = newItem.replace(PROJECT_ID_TOKEN, projectToUse)
+        # replace streamId
+        if STREAM_ID_TOKEN in newItem:
+          newItem = newItem.replace(STREAM_ID_TOKEN, dummyDoomedStream)
 
         # put new item in place of the old one
         cmd[i] = newItem
@@ -213,29 +250,49 @@ def escape_double_quotes_in_curl_data(curlRequest):
 
 
 
-def execute_curl_request(request):
+def execute_curl_request(request, headers=True, debug=False):
+    if debug:
+      print '\nexecuting curl request:'
+      pp.pprint(request)
     make_command_substitutions(request)
     escape_double_quotes_in_curl_data(request)
+    if debug:
+      print 'Processed request: '
+      pp.pprint(request)
+    result = None
+    body = None
     # add the -i option to print the response headers as well
-    request.append('-i')
-    print "CURL: " + ' '.join(request)
+    if headers:
+      request.append('-i')
+    print '\n' + ' '.join(request)
     raw = subprocess.Popen(request, stdout=subprocess.PIPE).communicate()[0]
     raw = raw.split('\r\n\r\n')
-    return {
-      'headers': raw[0],
-      'body': raw[1]
-    }
+
+    if debug:
+      pp.pprint(raw)
+
+    if headers:
+      result = {
+        'headers': raw[0],
+        'body': json.loads(raw[1])
+      }
+      body = result['body']
+    else:
+      result = json.loads(raw[0])
+      body = result
+
+    if 'errors' in body:
+      raise Exception("Error executing curl during API doc build.\n\t" +
+                      "Curl call details are: " + ' '.join(request) + '\n\t' +
+                      "Errors from API: " + str(body['errors']))
+
+
+    return result
 
 
 
-def process_api_response(doclines, headers, respBody):
-    jsonObj = json.loads(respBody)
-
-    if 'errors' in jsonObj:
-      raise Exception(jsonObj['errors'])
-
-    newResponse = json.dumps(jsonObj, ensure_ascii=False, indent=2).split('\n')
-
+def integrate_api_response(doclines, headers, respBody):
+    newResponse = json.dumps(respBody, ensure_ascii=False, indent=2).split('\n')
     # add the header lines before the code
     doclines.append('')
     doclines.append('  Curl response:')
@@ -262,17 +319,26 @@ def replace_curl_examples(app, what, name, obj, options, lines):
     if what == 'rest':
         curl_request = extract_curl_request(lines)
         if curl_request is not None:
-            response = execute_curl_request(curl_request)
             try:
-              process_api_response(lines, response['headers'], response['body'])
+              response = execute_curl_request(curl_request, debug=False)
             except Exception as e:
               raise Exception("Error executing curl during API doc build.\n\t" +
                               "Curl call details are: " + ' '.join(curl_request) + '\n\t' +
-                              "Errors from API: " + str(e.message))
+                              "Errors from API: " + str(e))
+            integrate_api_response(lines, response['headers'], response['body'])
+
+
+
+def teardown(app, what):
+    print '\n\nTODO: Remove all projects, models, streams, and swarms for apidocs@numenta.com.\n\n'
+
 
 
 def setup(app):
-    global dummyProject
+    global dummyProject,\
+           dummyDoomedProject, \
+           dummyDoomedStream
+
     app.add_autodocumenter(RestDocumenter)
     app.add_domain(HTTPDomain)
     desc_http_method.contribute_to_app(app)
@@ -286,12 +352,29 @@ def setup(app):
     desc_http_example.contribute_to_app(app)
     app.add_config_value('auto_curl', False, False)
     app.connect('autodoc-process-docstring', replace_curl_examples)
+    app.connect('build-finished', teardown)
 
     # Lastly, make some dummy API objects we can delete
-    cmd = 'curl https://api.numenta.com/v2/users/' + apiUserId + '/projects -u ' \
-      + API_KEY + ': -X POST -d {"project":{"name":"DUMMY"}}'
-    raw = subprocess.Popen(cmd.split(), stdout=subprocess.PIPE).communicate()[0]
-    resp = json.loads(raw)
-    pp.pprint(resp)
-    dummyProject= resp['project']['id']
+    ##################################################################
+
+    # dummy project for deletion
+    curl = 'curl https://api.numenta.com/v2/users/' + apiUserId + '/projects -u ' \
+      + API_KEY + ': -X POST -d \'{"project":{"name":"DUMMY"}}\''
+    curlCommand = convert_curl_string_to_curl_command(curl)
+    response = execute_curl_request(curlCommand, headers=False, debug=False)
+    dummyDoomedProject = response['project']['id']
+    # dummy project for retrieval
+    curl = 'curl https://api.numenta.com/v2/users/' + apiUserId + '/projects -u ' \
+      + API_KEY + ': -X POST -d \'{"project":{"name":"My API Doc Project"}}\''
+    curlCommand = convert_curl_string_to_curl_command(curl)
+    response = execute_curl_request(curlCommand, headers=False, debug=False)
+    dummyProject = response['project']['id']
+    # dummy stream
+    curl = 'curl https://api.numenta.com/v2/users/' + apiUserId + '/streams -u ' \
+      + API_KEY + ': -X POST -d \'{"stream":{"name":"My Stream","dataSources":[{"name":"My Data Source","fields":[{"name":"My Field","dataFormat":{"dataType":"SCALAR"}}]}]}}\''
+    curlCommand = convert_curl_string_to_curl_command(curl)
+    response = execute_curl_request(curlCommand, False, True)
+    dummyDoomedStream = response['stream']['id']
+
+
 
