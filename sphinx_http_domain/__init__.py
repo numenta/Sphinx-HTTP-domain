@@ -318,17 +318,59 @@ def replace_curl_examples(app, what, name, obj, options, lines):
 
 
 
+def prepopulate_api_objects(app):
+  """
+  Creates objects in the API that the doc build will use when making example
+  calls to the API.
+  """
+  global dummyProject,\
+  dummyDoomedProject,\
+  dummyStream,\
+  dummyDoomedStream
+
+  if app.config.auto_curl:
+
+    # dummy project for retrieval
+    curl = 'curl ' + API_URL + '/users/' + API_USER_ID + '/projects -u '\
+           + API_KEY + ': -X POST -d \'{"project":{"name":"My API Doc Project"}}\''
+    curlCommand = convert_curl_string_to_curl_command(curl)
+    response = execute_curl_request(curlCommand, headers=False, debug=False)
+    dummyProject = response['project']['id']
+
+    # dummy project for deletion
+    curl = 'curl ' + API_URL + '/users/' + API_USER_ID + '/projects -u '\
+           + API_KEY + ': -X POST -d \'{"project":{"name":"DUMMY"}}\''
+    curlCommand = convert_curl_string_to_curl_command(curl)
+    response = execute_curl_request(curlCommand, headers=False, debug=False)
+    dummyDoomedProject = response['project']['id']
+
+    # dummy stream for retrieval
+    curl = 'curl ' + API_URL + '/users/' + API_USER_ID + '/streams -u '\
+           + API_KEY + ': -X POST -d \'{"stream":{"name":"My Stream","dataSources":[{"name":"My Data Source","fields":[{"name":"My Field","dataFormat":{"dataType":"SCALAR"}}]}]}}\''
+    curlCommand = convert_curl_string_to_curl_command(curl)
+    response = execute_curl_request(curlCommand, headers=False, debug=False)
+    dummyStream = response['stream']['id']
+    # add data to this stream
+    curl = 'curl ' + API_URL + '/streams/' + dummyStream + '/data -u '\
+           + API_KEY + ': -d \'{ "input":[ [ 3.14 ], [ 42 ] ]}\''
+    curlCommand = convert_curl_string_to_curl_command(curl)
+    execute_curl_request(curlCommand, headers=False, debug=False)
+
+    # dummy stream for deletion
+    curl = 'curl ' + API_URL + '/users/' + API_USER_ID + '/streams -u '\
+           + API_KEY + ': -X POST -d \'{"stream":{"name":"My Stream","dataSources":[{"name":"My Data Source","fields":[{"name":"My Field","dataFormat":{"dataType":"SCALAR"}}]}]}}\''
+    curlCommand = convert_curl_string_to_curl_command(curl)
+    response = execute_curl_request(curlCommand, headers=False, debug=False)
+    dummyDoomedStream = response['stream']['id']
+
+
+
 def teardown(app, what):
     print '\n\nTODO: Remove all projects, models, streams, and swarms for apidocs@numenta.com.\n\n'
 
 
 
 def setup(app):
-    global dummyProject,\
-           dummyDoomedProject, \
-           dummyStream, \
-           dummyDoomedStream
-
     app.add_autodocumenter(RestDocumenter)
     app.add_domain(HTTPDomain)
     desc_http_method.contribute_to_app(app)
@@ -341,40 +383,6 @@ def setup(app):
     desc_http_response.contribute_to_app(app)
     desc_http_example.contribute_to_app(app)
     app.add_config_value('auto_curl', False, False)
+    app.connect('builder-inited', prepopulate_api_objects)
     app.connect('autodoc-process-docstring', replace_curl_examples)
     app.connect('build-finished', teardown)
-
-    # Lastly, make some dummy API objects we can delete
-    ##################################################################
-
-    # dummy project for retrieval
-    curl = 'curl ' + API_URL + '/users/' + API_USER_ID + '/projects -u '\
-           + API_KEY + ': -X POST -d \'{"project":{"name":"My API Doc Project"}}\''
-    curlCommand = convert_curl_string_to_curl_command(curl)
-    response = execute_curl_request(curlCommand, headers=False, debug=False)
-    dummyProject = response['project']['id']
-
-    # dummy project for deletion
-    curl = 'curl ' + API_URL + '/users/' + API_USER_ID + '/projects -u ' \
-      + API_KEY + ': -X POST -d \'{"project":{"name":"DUMMY"}}\''
-    curlCommand = convert_curl_string_to_curl_command(curl)
-    response = execute_curl_request(curlCommand, headers=False, debug=False)
-    dummyDoomedProject = response['project']['id']
-
-    # dummy stream for retrieval
-    curl = 'curl ' + API_URL + '/users/' + API_USER_ID + '/streams -u ' \
-      + API_KEY + ': -X POST -d \'{"stream":{"name":"My Stream","dataSources":[{"name":"My Data Source","fields":[{"name":"My Field","dataFormat":{"dataType":"SCALAR"}}]}]}}\''
-    curlCommand = convert_curl_string_to_curl_command(curl)
-    response = execute_curl_request(curlCommand, headers=False, debug=False)
-    dummyStream = response['stream']['id']
-    # TODO: Add data to this stream
-
-    # dummy stream for deletion
-    curl = 'curl ' + API_URL + '/users/' + API_USER_ID + '/streams -u ' \
-      + API_KEY + ': -X POST -d \'{"stream":{"name":"My Stream","dataSources":[{"name":"My Data Source","fields":[{"name":"My Field","dataFormat":{"dataType":"SCALAR"}}]}]}}\''
-    curlCommand = convert_curl_string_to_curl_command(curl)
-    response = execute_curl_request(curlCommand, headers=False, debug=False)
-    dummyDoomedStream = response['stream']['id']
-
-
-
