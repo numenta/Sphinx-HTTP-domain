@@ -31,21 +31,18 @@ from sphinx_http_domain.nodes import (desc_http_method, desc_http_url,
 
 import pprint
 
+API_KEY = 'hJbcM9vWW4Te89L0eKhFdQMOTxlN9Tfb'
+API_USER_ID = '0a0acdd4-d293-11e1-bb05-123138107980'
 STREAM_ID_TOKEN = '{STREAM_ID}'
-
 PROJECT_ID_TOKEN = '{PROJECT_ID}'
-
 USER_ID_TOKEN = '{USER_ID}'
-
 API_KEY_TOKEN = '{API_KEY}'
 
 pp = pprint.PrettyPrinter(indent=4)
 
-API_KEY = 'hJbcM9vWW4Te89L0eKhFdQMOTxlN9Tfb'
-apiUserId = '0a0acdd4-d293-11e1-bb05-123138107980'
 dummyProject = None
-
 dummyDoomedProject = None
+dummyStream = None
 dummyDoomedStream= None
 
 class HTTPDomain(Domain):
@@ -193,49 +190,35 @@ def extract_curl_request(doclines):
     if startIndex is None:
         return None
 
-    curl  = convert_curl_string_to_curl_command(' '.join(doclines[startIndex+1:endIndex]))
-
-#    curl = ' '.join(doclines[startIndex+1:endIndex])
-#    # remove line break chars and split into components
-#    curl = curl.replace('\\', '').split()
-#    # the problem is that this will split apart legit words in the -d value,
-#    # so we look for that block and squish them back together
-#    startIndex = None
-#    for i, subcmd in enumerate(curl):
-#        if subcmd == '-d':
-#            startIndex = i
-#            break
-#
-#    endIndex = len(curl) - 1
-#
-#    substrings = []
-#    if startIndex:
-#        for i in reversed(range(startIndex+1, endIndex+1)):
-#            substrings.append(curl.pop(i))
-#        substrings.reverse()
-#        curl.insert(startIndex + 1, ' '.join(substrings))
-
-    return curl
+    return convert_curl_string_to_curl_command(' '.join(doclines[startIndex+1:endIndex]))
 
 
 
 def make_command_substitutions(cmd):
     global dummyProject, dummyDoomedStream
     projectToUse = dummyProject
+    streamToUse = dummyStream
     if 'DELETE' in ' '.join(cmd):
         projectToUse = dummyDoomedProject
+        streamToUse = dummyDoomedStream
+
+#    if dummyProject:
+#      print '\n for query: "' + ' '.join(cmd)
+#      print '\ndummyProject: ' + dummyProject
+#      print 'dummyDoomedProject: ' + dummyDoomedProject
+#      print 'USING: ' + projectToUse + '\n'
 
     for i, item in enumerate(cmd):
         # replace API_KEY
         newItem = item.replace(API_KEY_TOKEN, API_KEY)
         # replace userId
-        newItem = newItem.replace(USER_ID_TOKEN, apiUserId)
+        newItem = newItem.replace(USER_ID_TOKEN, API_USER_ID)
         # replace projectId
         if PROJECT_ID_TOKEN in newItem:
           newItem = newItem.replace(PROJECT_ID_TOKEN, projectToUse)
         # replace streamId
         if STREAM_ID_TOKEN in newItem:
-          newItem = newItem.replace(STREAM_ID_TOKEN, dummyDoomedStream)
+          newItem = newItem.replace(STREAM_ID_TOKEN, streamToUse)
 
         # put new item in place of the old one
         cmd[i] = newItem
@@ -320,7 +303,7 @@ def replace_curl_examples(app, what, name, obj, options, lines):
         curl_request = extract_curl_request(lines)
         if curl_request is not None:
             try:
-              response = execute_curl_request(curl_request, debug=False)
+              response = execute_curl_request(curl_request, debug=True)
             except Exception as e:
               raise Exception("Error executing curl during API doc build.\n\t" +
                               "Curl call details are: " + ' '.join(curl_request) + '\n\t' +
@@ -337,6 +320,7 @@ def teardown(app, what):
 def setup(app):
     global dummyProject,\
            dummyDoomedProject, \
+           dummyStream, \
            dummyDoomedStream
 
     app.add_autodocumenter(RestDocumenter)
@@ -357,23 +341,33 @@ def setup(app):
     # Lastly, make some dummy API objects we can delete
     ##################################################################
 
+    # dummy project for retrieval
+    curl = 'curl https://api.numenta.com/v2/users/' + API_USER_ID + '/projects -u '\
+           + API_KEY + ': -X POST -d \'{"project":{"name":"My API Doc Project"}}\''
+    curlCommand = convert_curl_string_to_curl_command(curl)
+    response = execute_curl_request(curlCommand, headers=False, debug=False)
+    dummyProject = response['project']['id']
+
     # dummy project for deletion
-    curl = 'curl https://api.numenta.com/v2/users/' + apiUserId + '/projects -u ' \
+    curl = 'curl https://api.numenta.com/v2/users/' + API_USER_ID + '/projects -u ' \
       + API_KEY + ': -X POST -d \'{"project":{"name":"DUMMY"}}\''
     curlCommand = convert_curl_string_to_curl_command(curl)
     response = execute_curl_request(curlCommand, headers=False, debug=False)
     dummyDoomedProject = response['project']['id']
-    # dummy project for retrieval
-    curl = 'curl https://api.numenta.com/v2/users/' + apiUserId + '/projects -u ' \
-      + API_KEY + ': -X POST -d \'{"project":{"name":"My API Doc Project"}}\''
-    curlCommand = convert_curl_string_to_curl_command(curl)
-    response = execute_curl_request(curlCommand, headers=False, debug=False)
-    dummyProject = response['project']['id']
-    # dummy stream
-    curl = 'curl https://api.numenta.com/v2/users/' + apiUserId + '/streams -u ' \
+
+    # dummy stream for retrieval
+    curl = 'curl https://api.numenta.com/v2/users/' + API_USER_ID + '/streams -u ' \
       + API_KEY + ': -X POST -d \'{"stream":{"name":"My Stream","dataSources":[{"name":"My Data Source","fields":[{"name":"My Field","dataFormat":{"dataType":"SCALAR"}}]}]}}\''
     curlCommand = convert_curl_string_to_curl_command(curl)
-    response = execute_curl_request(curlCommand, False, True)
+    response = execute_curl_request(curlCommand, headers=False, debug=False)
+    dummyStream = response['stream']['id']
+    # TODO: Add data to this stream
+
+    # dummy stream for deletion
+    curl = 'curl https://api.numenta.com/v2/users/' + API_USER_ID + '/streams -u ' \
+      + API_KEY + ': -X POST -d \'{"stream":{"name":"My Stream","dataSources":[{"name":"My Data Source","fields":[{"name":"My Field","dataFormat":{"dataType":"SCALAR"}}]}]}}\''
+    curlCommand = convert_curl_string_to_curl_command(curl)
+    response = execute_curl_request(curlCommand, headers=False, debug=False)
     dummyDoomedStream = response['stream']['id']
 
 
