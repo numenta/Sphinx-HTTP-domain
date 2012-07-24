@@ -31,8 +31,12 @@ from sphinx_http_domain.nodes import (desc_http_method, desc_http_url,
 
 import pprint
 
+# TODO: extract into conf.py
+API_URL = 'https://api.numenta.com/v2'
 API_KEY = 'hJbcM9vWW4Te89L0eKhFdQMOTxlN9Tfb'
 API_USER_ID = '0a0acdd4-d293-11e1-bb05-123138107980'
+
+API_URL_TOKEN = '{API_URL}'
 STREAM_ID_TOKEN = '{STREAM_ID}'
 PROJECT_ID_TOKEN = '{PROJECT_ID}'
 USER_ID_TOKEN = '{USER_ID}'
@@ -181,6 +185,8 @@ def extract_curl_request(doclines):
     startIndex = None
     endIndex = None
     for i, line in enumerate(doclines):
+        # replace the {API_URL} token with the real API URL
+        doclines[i] = line.replace(API_URL_TOKEN, API_URL)
         if 'Curl request' in line:
             startIndex = i
         if 'Curl response' in line:
@@ -342,21 +348,21 @@ def setup(app):
     ##################################################################
 
     # dummy project for retrieval
-    curl = 'curl https://api.numenta.com/v2/users/' + API_USER_ID + '/projects -u '\
+    curl = 'curl ' + API_URL + '/users/' + API_USER_ID + '/projects -u '\
            + API_KEY + ': -X POST -d \'{"project":{"name":"My API Doc Project"}}\''
     curlCommand = convert_curl_string_to_curl_command(curl)
     response = execute_curl_request(curlCommand, headers=False, debug=False)
     dummyProject = response['project']['id']
 
     # dummy project for deletion
-    curl = 'curl https://api.numenta.com/v2/users/' + API_USER_ID + '/projects -u ' \
+    curl = 'curl ' + API_URL + '/users/' + API_USER_ID + '/projects -u ' \
       + API_KEY + ': -X POST -d \'{"project":{"name":"DUMMY"}}\''
     curlCommand = convert_curl_string_to_curl_command(curl)
     response = execute_curl_request(curlCommand, headers=False, debug=False)
     dummyDoomedProject = response['project']['id']
 
     # dummy stream for retrieval
-    curl = 'curl https://api.numenta.com/v2/users/' + API_USER_ID + '/streams -u ' \
+    curl = 'curl ' + API_URL + '/users/' + API_USER_ID + '/streams -u ' \
       + API_KEY + ': -X POST -d \'{"stream":{"name":"My Stream","dataSources":[{"name":"My Data Source","fields":[{"name":"My Field","dataFormat":{"dataType":"SCALAR"}}]}]}}\''
     curlCommand = convert_curl_string_to_curl_command(curl)
     response = execute_curl_request(curlCommand, headers=False, debug=False)
@@ -364,7 +370,7 @@ def setup(app):
     # TODO: Add data to this stream
 
     # dummy stream for deletion
-    curl = 'curl https://api.numenta.com/v2/users/' + API_USER_ID + '/streams -u ' \
+    curl = 'curl ' + API_URL + '/users/' + API_USER_ID + '/streams -u ' \
       + API_KEY + ': -X POST -d \'{"stream":{"name":"My Stream","dataSources":[{"name":"My Data Source","fields":[{"name":"My Field","dataFormat":{"dataType":"SCALAR"}}]}]}}\''
     curlCommand = convert_curl_string_to_curl_command(curl)
     response = execute_curl_request(curlCommand, headers=False, debug=False)
