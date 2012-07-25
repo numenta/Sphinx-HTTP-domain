@@ -34,26 +34,8 @@ from sphinx_http_domain.nodes import (desc_http_method, desc_http_url,
 
 import pprint
 
-# TODO: extract into conf.py
-API_URL = 'https://api.numenta.com/v2'
-API_KEY = 'hJbcM9vWW4Te89L0eKhFdQMOTxlN9Tfb'
-API_USER_ID = '0a0acdd4-d293-11e1-bb05-123138107980'
-
-API_URL_TOKEN = '{API_URL}'
-STREAM_ID_TOKEN = '{STREAM_ID}'
-MODEL_ID_TOKEN = '{MODEL_ID}'
-PROJECT_ID_TOKEN = '{PROJECT_ID}'
-USER_ID_TOKEN = '{USER_ID}'
-API_KEY_TOKEN = '{API_KEY}'
-
+tokens = None
 pp = pprint.PrettyPrinter(indent=4)
-
-dummyProject = None
-dummyDoomedProject = None
-dummyStream = None
-dummyDoomedStream = None
-dummyModel = None
-dummyDoomedModel = None
 
 class HTTPDomain(Domain):
   """HTTP language domain."""
@@ -204,9 +186,6 @@ def extract_curl_requests(doclines):
   additions = []
 
   for i, line in enumerate(doclines):
-    # replace the {API_URL} token with the real API URL
-    doclines[i] = line.replace(API_URL_TOKEN, API_URL)
-
     if 'Curl request' in line:
 #      print 'found Curl request line ' + str(i) + ' current processing? ' + str(requestParseOccurring)
       if not requestParseOccurring:
@@ -247,34 +226,13 @@ def extract_curl_requests(doclines):
 
 
 def make_command_substitutions(cmd):
-  global dummyProject, dummyDoomedStream
-  projectToUse = dummyProject
-  streamToUse = dummyStream
-  modelToUse = dummyModel
-
-  if 'DELETE' in ' '.join(cmd):
-    # For deletions, we swap out the id with the one that is DOOMED
-    projectToUse = dummyDoomedProject
-    streamToUse = dummyDoomedStream
-    modelToUse = dummyDoomedModel
-
+  global tokens
   for i, item in enumerate(cmd):
-    # replace API_KEY
-    newItem = item.replace(API_KEY_TOKEN, API_KEY)
-    # replace userId
-    newItem = newItem.replace(USER_ID_TOKEN, API_USER_ID)
-    # replace projectId
-    if PROJECT_ID_TOKEN in newItem:
-      newItem = newItem.replace(PROJECT_ID_TOKEN, projectToUse)
-      # replace streamId
-    if STREAM_ID_TOKEN in newItem:
-      newItem = newItem.replace(STREAM_ID_TOKEN, streamToUse)
-      # replace modelId
-    if MODEL_ID_TOKEN in newItem:
-      newItem = newItem.replace(MODEL_ID_TOKEN, modelToUse)
+    for token in tokens:
+      value = tokens[token]
+      if token in item:
+        cmd[i] = cmd[i].replace(token, value)
 
-    # put new item in place of the old one
-    cmd[i] = newItem
 
 
 def escape_double_quotes_in_curl_data(curlRequest):
@@ -325,7 +283,6 @@ def execute_curl_request(request, headers=True, debug=False):
 
 def translate_response(headers, respBody):
   newResponse = json.dumps(respBody, ensure_ascii=False, indent=2).split('\n')
-
   newLines = []
   # add the header lines before the code
   newLines.append('')
@@ -338,17 +295,13 @@ def translate_response(headers, respBody):
   newLines.append('')
   newLines.append('  .. code-block:: json')
   newLines.append('')
-
   # add 4 spaces to each response line to properly indent it within code-block
   for i, line in enumerate(newResponse):
     newResponse[i] = '    ' + line
-
   # extra buffer line between sections
   newResponse.append('')
-
   # add response to end of doclines
   newLines.extend(newResponse)
-
   return newLines
 
 
@@ -359,71 +312,16 @@ def replace_curl_examples(app, what, name, obj, options, lines):
     extract_curl_requests(lines)
 
 
-def prepopulate_api_objects(app):
-  """
-  Creates objects in the API that the doc build will use when making example
-  calls to the API.
-  """
-  global dummyProject, dummyDoomedProject,\
-  dummyStream, dummyDoomedStream,\
-  dummyModel, dummyDoomedModel
+def emit_rest_setup(app):
+  global tokens
+  tokens = app.emit_firstresult('rest-setup')
 
-  if app.config.auto_curl:
-    # dummy project for retrieval
-    curl = 'curl ' + API_URL + '/users/' + API_USER_ID + '/projects -u '\
-           + API_KEY + ': -X POST -d \'{"project":{"name":"My API Doc Project"}}\''
-    curlCommand = convert_curl_string_to_curl_command(curl)
-    response = execute_curl_request(curlCommand, headers=False, debug=False)
-    dummyProject = response['project']['id']
-
-    # dummy project for deletion
-    curl = 'curl ' + API_URL + '/users/' + API_USER_ID + '/projects -u '\
-           + API_KEY + ': -X POST -d \'{"project":{"name":"DUMMY"}}\''
-    curlCommand = convert_curl_string_to_curl_command(curl)
-    response = execute_curl_request(curlCommand, headers=False, debug=False)
-    dummyDoomedProject = response['project']['id']
-
-    # dummy stream for retrieval
-    curl = 'curl ' + API_URL + '/users/' + API_USER_ID + '/streams -u '\
-           + API_KEY + ': -X POST -d \'{"stream":{"name":"My Stream","dataSources":[{"name":"My Data Source","fields":[{"name":"My Field","dataFormat":{"dataType":"SCALAR"}}]}]}}\''
-    curlCommand = convert_curl_string_to_curl_command(curl)
-    response = execute_curl_request(curlCommand, headers=False, debug=False)
-    dummyStream = response['stream']['id']
-    # add data to this stream
-    curl = 'curl ' + API_URL + '/streams/' + dummyStream + '/data -u '\
-           + API_KEY + ': -d \'{ "input":[ [ 3.14 ], [ 42 ] ]}\''
-    curlCommand = convert_curl_string_to_curl_command(curl)
-    execute_curl_request(curlCommand, headers=False, debug=False)
-
-    # dummy stream for deletion
-    curl = 'curl ' + API_URL + '/users/' + API_USER_ID + '/streams -u '\
-           + API_KEY + ': -X POST -d \'{"stream":{"name":"DUMMY","dataSources":[{"name":"My Data Source","fields":[{"name":"My Field","dataFormat":{"dataType":"SCALAR"}}]}]}}\''
-    curlCommand = convert_curl_string_to_curl_command(curl)
-    response = execute_curl_request(curlCommand, headers=False, debug=False)
-    dummyDoomedStream = response['stream']['id']
-
-    # dummy model for retrieval
-    curl = 'curl ' + API_URL + '/projects/' + dummyProject + '/models -u '\
-           + API_KEY + ': -X POST -d \'{"model":{"name":"Simple Model","streamId":"{STREAM_ID}","predictedField":"My Field"}}\''
-    curlCommand = convert_curl_string_to_curl_command(curl)
-    response = execute_curl_request(curlCommand, headers=False, debug=False)
-    dummyModel = response['model']['id']
-
-    # dummy model for deletion
-    curl = 'curl ' + API_URL + '/projects/' + dummyProject + '/models -u '\
-           + API_KEY + ': -X POST -d \'{"model":{"name":"DUMMY","streamId":"' + dummyDoomedStream + '","predictedField":"My Field"}}\''
-    curlCommand = convert_curl_string_to_curl_command(curl)
-    response = execute_curl_request(curlCommand, headers=False, debug=False)
-    dummyDoomedModel = response['model']['id']
-
-
-def teardown(app, what):
-  print '\n\nTODO: Remove all projects, models, streams, and swarms for apidocs@numenta.com.\n\n'
-
+###############################################################################
 
 def setup(app):
   app.add_autodocumenter(RestDocumenter)
   app.add_domain(HTTPDomain)
+  app.add_event('rest-setup')
   desc_http_method.contribute_to_app(app)
   desc_http_url.contribute_to_app(app)
   desc_http_path.contribute_to_app(app)
@@ -434,6 +332,9 @@ def setup(app):
   desc_http_response.contribute_to_app(app)
   desc_http_example.contribute_to_app(app)
   app.add_config_value('auto_curl', False, False)
-  app.connect('builder-inited', prepopulate_api_objects)
+  app.connect('builder-inited', emit_rest_setup)
   app.connect('autodoc-process-docstring', replace_curl_examples)
   app.connect('build-finished', teardown)
+
+def teardown(app, what):
+  print '\n\nTODO: Remove all projects, models, streams, and swarms for apidocs@numenta.com.\n\n'
