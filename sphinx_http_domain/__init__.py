@@ -35,6 +35,7 @@ from sphinx_http_domain.nodes import (desc_http_method, desc_http_url,
 import pprint
 
 tokens = None
+debug = False
 pp = pprint.PrettyPrinter(indent=4)
 
 class HTTPDomain(Domain):
@@ -170,11 +171,10 @@ def convert_curl_string_to_curl_command(curlString):
 
 def process_one_curl_request(curl_request):
   try:
-    response = execute_curl_request(curl_request, debug=False)
+    response = execute_curl_request(curl_request)
   except Exception as e:
     raise Exception("Error executing curl during API doc build.\n\t" +
-                    "Curl call details are: " + ' '.join(
-      curl_request) + '\n\t' +
+                    "Curl call details are: " + ' '.join(curl_request) + '\n\t' +
                     "Errors from API: " + str(e))
   return translate_response(response['headers'], response['body'])
 
@@ -242,7 +242,7 @@ def escape_double_quotes_in_curl_data(curlRequest):
       break
 
 
-def execute_curl_request(request, headers=True, debug=False):
+def execute_curl_request(request, headers=True):
   if debug:
     print '\nexecuting curl request:'
     pp.pprint(request)
@@ -257,7 +257,8 @@ def execute_curl_request(request, headers=True, debug=False):
   if headers:
     request.append('-i')
   print '\n' + ' '.join(request)
-  raw = subprocess.Popen(request, stdout=subprocess.PIPE).communicate()[0]
+  raw = subprocess.Popen(request, stdout=subprocess.PIPE, stderr=subprocess.PIPE).communicate()[0]
+  print '\tresponse received'
   raw = raw.split('\r\n\r\n')
 
   if debug:
@@ -313,8 +314,9 @@ def replace_curl_examples(app, what, name, obj, options, lines):
 
 
 def emit_rest_setup(app):
-  global tokens
+  global tokens, debug
   tokens = app.emit_firstresult('rest-setup')
+  debug = app.config.debug
 
 ###############################################################################
 
@@ -332,6 +334,7 @@ def setup(app):
   desc_http_response.contribute_to_app(app)
   desc_http_example.contribute_to_app(app)
   app.add_config_value('auto_curl', False, False)
+  app.add_config_value('debug', False, False)
   app.connect('builder-inited', emit_rest_setup)
   app.connect('autodoc-process-docstring', replace_curl_examples)
   app.connect('build-finished', teardown)
