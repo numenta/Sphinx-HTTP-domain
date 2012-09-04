@@ -242,7 +242,8 @@ def escape_double_quotes_in_curl_data(curlRequest):
       break
 
 
-def execute_curl_request(request, headers=True):
+def execute_curl_request(request):
+  global tokens
   if debug:
     print '\nexecuting curl request:'
     pp.pprint(request)
@@ -254,8 +255,7 @@ def execute_curl_request(request, headers=True):
   result = None
   body = None
   # add the -i option to print the response headers as well
-  if headers:
-    request.append('-i')
+  request.append('-i')
   print '\n' + ' '.join(request)
   raw = subprocess.Popen(request, stdout=subprocess.PIPE, stderr=subprocess.PIPE).communicate()[0]
   print '\tresponse received'
@@ -264,15 +264,13 @@ def execute_curl_request(request, headers=True):
   if debug:
     pp.pprint(raw)
 
-  if headers:
-    result = {
-      'headers': raw[0],
-      'body': json.loads(raw[1])
-    }
-    body = result['body']
-  else:
-    result = json.loads(raw[0])
-    body = result
+  # Replace the API_KEY given back with the response with a dummy value
+  rawResponse = raw[1].replace(tokens['{API_KEY}'], 'API_KEY')
+  result = {
+    'headers': raw[0],
+    'body': json.loads(rawResponse)
+  }
+  body = result['body']
 
   if 'errors' in body:
     raise Exception("Error executing curl during API doc build.\n\t" +
