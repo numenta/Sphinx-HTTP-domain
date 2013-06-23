@@ -176,7 +176,7 @@ def process_one_curl_request(curl_request):
     raise Exception("Error executing curl during API doc build.\n\t" +
                     "Curl call details are: " + ' '.join(curl_request) + '\n\t' +
                     "Errors from API: " + str(e))
-  return translate_response(response['headers'], response['body'])
+  return translate_response(response)
 
 
 def extract_curl_requests(doclines):
@@ -264,24 +264,29 @@ def execute_curl_request(request):
   if debug:
     pp.pprint(raw)
 
-  # Replace the API_KEY given back with the response with a dummy value
-  rawResponse = raw[1].replace(tokens['{API_KEY}'], 'API_KEY')
-  result = {
-    'headers': raw[0],
-    'body': json.loads(rawResponse)
-  }
-  body = result['body']
+  result = { 'headers': raw[0] }
+  if raw[1]:
+    # Replace the API_KEY given back with the response with a dummy value
+    rawResponse = raw[1].replace(tokens['{API_KEY}'], 'API_KEY')
 
-  if 'errors' in body:
-    raise Exception("Error executing curl during API doc build.\n\t" +
-                    "Curl call details are: " + ' '.join(request) + '\n\t' +
-                    "Errors from API: " + str(body['errors']))
+    result['body'] = json.loads(rawResponse)
+
+    body = result['body']
+    if 'errors' in body:
+      raise Exception("Error executing curl during API doc build.\n\t" +
+                      "Curl call details are: " + ' '.join(request) + '\n\t' +
+                      "Errors from API: " + str(body['errors']))
 
   return result
 
 
-def translate_response(headers, respBody):
-  newResponse = json.dumps(respBody, ensure_ascii=False, indent=2).split('\n')
+def translate_response(response):
+  headers = response['headers']
+  newResponse = None
+  if 'body' in response:
+    body = response['body']
+    newResponse = json.dumps(body, ensure_ascii=False, indent=2).split('\n')
+
   newLines = []
   # add the header lines before the code
   newLines.append('')
@@ -291,16 +296,19 @@ def translate_response(headers, respBody):
   newLines.append('')
   for hdr in headers.split('\n'):
     newLines.append('    ' + hdr)
-  newLines.append('')
-  newLines.append('  .. code-block:: json')
-  newLines.append('')
-  # add 4 spaces to each response line to properly indent it within code-block
-  for i, line in enumerate(newResponse):
-    newResponse[i] = '    ' + line
-  # extra buffer line between sections
-  newResponse.append('')
-  # add response to end of doclines
-  newLines.extend(newResponse)
+
+  if newResponse is not None:
+    newLines.append('')
+    newLines.append('  .. code-block:: json')
+    newLines.append('')
+    # add 4 spaces to each response line to properly indent it within code-block
+    for i, line in enumerate(newResponse):
+      newResponse[i] = '    ' + line
+    # extra buffer line between sections
+    newResponse.append('')
+    # add response to end of doclines
+    newLines.extend(newResponse)
+
   return newLines
 
 
